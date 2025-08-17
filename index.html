@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>GitHub Stats</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; }
+    canvas { max-width: 800px; margin: 20px auto; }
+  </style>
+</head>
+<body>
+  <h1>GitHub Repository Stats</h1>
+  <canvas id="statsChart"></canvas>
+  <script>
+    // GitHub API 호출
+    async function fetchStats() {
+      const owner = 'naili0120';
+      const repo = 'wallpaper';
+      const branch = 'master';
+      const since = '2023-08-13T00:00:00Z';
+      const until = '2025-08-13T23:59:59Z';
+      const token = 'YOUR_GH_TOKEN'; // 주의: 실제 배포 시 환경 변수로 관리
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      };
+      let commits = [];
+      let url = `https://api.github.com/repos/${owner}/${repo}/commits?sha=${branch}&since=${since}&until=${until}&per_page=100`;
+
+      while (url) {
+        const response = await fetch(url, { headers });
+        if (response.status === 404) throw new Error('Repository or branch not found');
+        if (response.status === 429) {
+          await new Promise(resolve => setTimeout(resolve, 60000));
+          continue;
+        }
+        const data = await response.json();
+        commits = commits.concat(data);
+        url = response.headers.get('Link')?.match(/<([^>]+)>;\s*rel="next"/)?.[1];
+      }
+
+      const authorStats = {};
+      for (const commit of commits) {
+        const author = commit.commit.author.name || commit.commit.author.email;
+        if (!author) continue;
+        const detailResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${commit.sha}`, { headers });
+        const detail = await detailResponse.json();
+        if (!authorStats[author]) {
+          authorStats[author] = { commits: 0, additions: 0, deletions: 0 };
+        }
+        authorStats[author].commits += 1;
+        authorStats[author].additions += detail.stats?.additions || 0;
+        authorStats[author].deletions += detail.stats?.deletions || 0;
+      }
+
+      // Chart.js로 시각화
+      const labels = Object.keys(authorStats);
+      const commitsData = labels.map(author => authorStats[author].commits);
+      const additionsData = labels.map(author => authorStats[author].additions);
+      const deletionsData = labels.map(author => authorStats[author].deletions);
+
+      const ctx = document.getElementById('statsChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            { label: 'Commits', data: commitsData, backgroundColor: 'rgba(75, 192, 192, 0.5)' },
+            { label: 'Additions', data: additionsData, backgroundColor: 'rgba(54, 162, 235, 0.5)' },
+            { label: 'Deletions', data: deletionsData, backgroundColor: 'rgba(255, 99, 132, 0.5)' }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+
+    fetchStats().catch(error => {
+      console.error('Error:', error);
+      document.body.innerHTML += `<p>Error: ${error.message}</p>`;
+    });
+  </script>
+</body>
+</html>
